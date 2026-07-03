@@ -1,0 +1,9 @@
+{
+  "id": "T2",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Gestión de Datos e Información",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T2_gestion_datos_informacion.md"
+}

@@ -1,0 +1,22 @@
+{
+  "metodologicas": {
+    "Experimental Puro": "M1",
+    "Cuasiexperimental": "M2",
+    "Descriptivo Transversal": "M3",
+    "Descriptivo Longitudinal": "M4",
+    "Cualitativo": "M5"
+  },
+  "tecnicas": {
+    "Sistemas Inteligentes": "T1",
+    "Gestión de Datos e Información": "T2",
+    "Inteligencia Artificial": "T3",
+    "Sistemas de Información": "T4",
+    "Comunicación, Tecnología de la Información e Innovación": "T5",
+    "Comunicación TI e Innovación": "T5",
+    "Ingeniería de Software": "T6",
+    "Sistemas Cognitivos": "T7",
+    "Robótica y Automatización Avanzada": "T8",
+    "Nanomateriales Funcionales": "T9"
+  },
+  "linguistica": "L1"
+}

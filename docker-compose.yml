@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  # ── MCP de Rúbricas ──────────────────────────────────────────────────
+  mcp-rubricas:
+    build: ./mcp-rubricas
+    container_name: tesis_mcp_rubricas
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./mcp-rubricas:/app
+    restart: unless-stopped
+
+  # ── Backend FastAPI ──────────────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: tesis_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./database:/app/database
+      - ./uploads:/app/uploads
+    env_file:
+      - .env
+    environment:
+      - LANGFLOW_URL=http://langflow:7860
+      - DATABASE_URL=sqlite:///./database/tesis.db
+      - LANGFLOW_USER=${LANGFLOW_USER:-admin}
+      - LANGFLOW_PASSWORD=${LANGFLOW_PASSWORD:-admin}
+      - MCP_RUBRICAS_URL=http://mcp-rubricas:8001
+    depends_on:
+      - langflow
+      - mcp-rubricas
+    restart: unless-stopped
+
+  # ── Frontend React/Vite ──────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: tesis_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ── Langflow ─────────────────────────────────────────────────────────
+  langflow:
+    image: langflowai/langflow:latest
+    container_name: tesis_langflow
+    ports:
+      - "7860:7860"
+    volumes:
+      - langflow_data:/app/langflow
+    environment:
+      - LANGFLOW_DATABASE_URL=sqlite:///./langflow.db
+      - LANGFLOW_AUTO_LOGIN=true
+      - LANGFLOW_SUPERUSER=admin
+      - LANGFLOW_SUPERUSER_PASSWORD=admin
+    restart: unless-stopped
+
+volumes:
+  langflow_data:

@@ -1,0 +1,9 @@
+{
+  "id": "T1",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Sistemas Inteligentes",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T1_sistemas_inteligentes.md"
+}

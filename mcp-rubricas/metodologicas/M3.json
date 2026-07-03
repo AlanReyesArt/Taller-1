@@ -1,0 +1,10 @@
+{
+    "id": "M3",
+    "tipo": "metodologica",
+    "nombre": "Rúbrica Metodológica Descriptivo Transversal",
+    "enfoque": "Cuantitativo",
+    "diseno": "Descriptivo Transversal",
+    "puntaje_maximo": 10,
+    "total_criterios": 60,
+    "archivo_md": "metodologicas/M3.md"
+}

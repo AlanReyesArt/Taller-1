@@ -1,0 +1,10 @@
+{
+    "id": "M2",
+    "tipo": "metodologica",
+    "nombre": "Rúbrica Metodológica Cuasiexperimental",
+    "enfoque": "Cuantitativo",
+    "diseno": "Cuasiexperimental",
+    "puntaje_maximo": 10,
+    "total_criterios": 60,
+    "archivo_md": "metodologicas/M2.md"
+}

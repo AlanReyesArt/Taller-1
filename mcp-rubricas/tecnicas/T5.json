@@ -1,0 +1,9 @@
+{
+  "id": "T5",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Comunicación, Tecnología de la Información e Innovación",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T5_comunicacion_ti_innovacion.md"
+}

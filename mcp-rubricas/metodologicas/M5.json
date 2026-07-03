@@ -1,0 +1,10 @@
+{
+    "id": "M5",
+    "tipo": "metodologica",
+    "nombre": "Rúbrica Metodológica Cualitativa",
+    "enfoque": "Cualitativo",
+    "diseno": "Cualitativo",
+    "puntaje_maximo": 10,
+    "total_criterios": 60,
+    "archivo_md": "metodologicas/M5.md"
+}

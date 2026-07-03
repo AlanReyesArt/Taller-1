@@ -1,0 +1,9 @@
+{
+  "id": "T9",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Nanomateriales Funcionales",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T9_nanomateriales_funcionales.md"
+}

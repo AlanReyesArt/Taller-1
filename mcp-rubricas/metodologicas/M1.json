@@ -1,0 +1,10 @@
+{
+    "id": "M1",
+    "tipo": "metodologica",
+    "nombre": "Rúbrica Metodológica Experimental Puro",
+    "enfoque": "Cuantitativo",
+    "diseno": "Experimental Puro",
+    "puntaje_maximo": 10,
+    "total_criterios": 60,
+    "archivo_md": "metodologicas/M1.md"
+}

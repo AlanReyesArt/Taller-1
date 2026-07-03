@@ -1,0 +1,10 @@
+{
+    "id": "M4",
+    "tipo": "metodologica",
+    "nombre": "Rúbrica Metodológica Descriptivo Longitudinal",
+    "enfoque": "Cuantitativo",
+    "diseno": "Descriptivo Longitudinal",
+    "puntaje_maximo": 10,
+    "total_criterios": 60,
+    "archivo_md": "metodologicas/M4.md"
+}

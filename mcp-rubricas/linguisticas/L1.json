@@ -1,0 +1,8 @@
+{
+  "id": "L1",
+  "tipo": "linguistica",
+  "nombre": "Rúbrica Lingüística APA 7 y Redacción Académica UPAO",
+  "puntaje_maximo": 3,
+  "total_criterios": 30,
+  "archivo_md": "linguisticas/L1.md"
+}

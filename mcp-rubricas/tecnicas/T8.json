@@ -1,0 +1,9 @@
+{
+  "id": "T8",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Robótica y Automatización Avanzada",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T8_robotica_automatizacion.md"
+}

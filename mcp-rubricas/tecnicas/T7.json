@@ -1,0 +1,9 @@
+{
+  "id": "T7",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Sistemas Cognitivos",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T7_sistemas_cognitivos.md"
+}

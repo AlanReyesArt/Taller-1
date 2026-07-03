@@ -1,0 +1,9 @@
+{
+  "id": "T6",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Ingeniería de Software",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T6_ingenieria_software.md"
+}

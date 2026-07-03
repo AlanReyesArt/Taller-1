@@ -1,0 +1,9 @@
+{
+  "id": "T4",
+  "tipo": "tecnica",
+  "linea": "Robótica, Automatización Avanzada y Sistemas Inteligentes",
+  "sublinea": "Sistemas de Información",
+  "puntaje_maximo": 7,
+  "total_criterios": 60,
+  "archivo_md": "tecnicas/T4_sistemas_informacion.md"
+}
