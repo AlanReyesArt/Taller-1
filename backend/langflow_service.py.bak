@@ -187,7 +187,7 @@ async def _ejecutar_flujo(nombre: str, flow_id: str, input_value: str, tweaks: O
         }
 
 
-def _extraer_texto_pdf(filepath: str, rapido: bool = False) -> str:
+def _extraer_texto_pdf(filepath: str) -> str:
     """
     Extrae el PDF y construye el input compacto para Langflow.
 
@@ -195,10 +195,10 @@ def _extraer_texto_pdf(filepath: str, rapido: bool = False) -> str:
     No se envía la tesis completa en bruto.
     Se envía un JSON segmentado.
     """
-    from pdf_extractor import extraer_texto_pdf, construir_input_langflow, construir_input_langflow_rapido
+    from pdf_extractor import extraer_texto_pdf, construir_input_langflow
 
     datos = extraer_texto_pdf(filepath)
-    texto_langflow = construir_input_langflow_rapido(datos) if rapido else construir_input_langflow(datos)
+    texto_langflow = construir_input_langflow(datos)
     print("\n" + "="*80)
     print("TEXTO ENVIADO A LANGFLOW")
     print("="*80)
@@ -218,136 +218,68 @@ def _extraer_texto_pdf(filepath: str, rapido: bool = False) -> str:
     return texto_langflow
 
 
-def _extraer_json_de_texto(texto: str) -> Optional[dict]:
-    """Extrae de forma tolerante un objeto JSON contenido en la respuesta del LLM."""
-    import json
-    import re
-
-    if not texto:
-        return None
-    limpio = str(texto).strip()
-    if limpio.startswith("```"):
-        m = re.search(r"```(?:json)?\s*([\s\S]*?)(?:```|$)", limpio, re.IGNORECASE)
-        if m:
-            limpio = m.group(1).strip()
-    ini = limpio.find("{")
-    fin = limpio.rfind("}")
-    
-    if ini < 0:
-        return None
-        
-    if fin < ini:
-        # Intento de cierre forzado para JSONs truncados
-        limpio = limpio + "}"
-        fin = limpio.rfind("}")
-
-    try:
-        dato = json.loads(limpio[ini:fin + 1])
-        return dato if isinstance(dato, dict) else None
-    except json.JSONDecodeError:
-        # Intento básico de limpieza (comas extra, etc.)
-        try:
-            parcheado = re.sub(r',(\s*[}\]])', r'\1', limpio[ini:fin + 1])
-            dato = json.loads(parcheado)
-            return dato if isinstance(dato, dict) else None
-        except Exception:
-            pass
-        return None
-    except Exception:
-        return None
-
-
-def _normalizar_estado_criterio(valor: str) -> str:
-    estado = str(valor or "").strip().lower().replace(" ", "_")
-    equivalencias = {
-        "parcial": "observado",
-        "cumple_parcialmente": "observado",
-        "observación": "observado",
-        "observacion": "observado",
-        "no_cumple": "no_cumple",
-        "no-cumple": "no_cumple",
-        "falta": "no_cumple",
-        "incumple": "no_cumple",
-        "no_evaluable": "no_evaluable",
-        "no_aplica": "no_evaluable",
-        "n/a": "no_evaluable",
-    }
-    estado = equivalencias.get(estado, estado)
-    return estado if estado in {"cumple", "observado", "no_cumple", "no_evaluable"} else "error_evaluacion"
-
-
-def _normalizar_reporte_agente(reporte: Optional[dict], agente: str) -> Optional[dict]:
-    if not isinstance(reporte, dict):
-        return None
-    items = reporte.get("criterios")
-    if not isinstance(items, list):
-        items = reporte.get("evaluaciones")
-    if isinstance(items, list):
-        normalizados = []
-        for item in items:
-            if not isinstance(item, dict) or not item.get("id"):
-                continue
-            normalizados.append({
-                "id": str(item.get("id", "")).strip().upper(),
-                "estado": _normalizar_estado_criterio(item.get("estado")),
-                "evidencia": str(item.get("evidencia") or "").strip(),
-                "ubicacion": str(item.get("ubicacion") or "").strip(),
-                "justificacion": str(item.get("justificacion") or item.get("observacion") or "").strip(),
-                "confianza": str(item.get("confianza") or "media").strip().lower(),
-            })
-        reporte = dict(reporte)
-        reporte["criterios"] = normalizados
-        # Alias temporal para componentes antiguos del frontend.
-        reporte["evaluaciones"] = normalizados
-    reporte.setdefault("agente", agente)
-    return reporte
-
-
 def _extraer_todos_los_outputs(data: dict) -> dict:
-    """Extrae y clasifica las respuestas JSON de todos los agentes de un flujo."""
+    """
+    Extrae los outputs de TODOS los agentes del flujo secuencial.
+    Retorna un dict con claves: metodologico, tecnico, linguistico, consenso
+    intentando parsear el JSON de cada uno.
+    """
+    import json as _json
+
     outputs_raw = []
     try:
         for salida in data.get("outputs", []):
-            for item in salida.get("outputs", []):
-                results = item.get("results", {})
-                msg = results.get("message", {})
+            for r in salida.get("outputs", []):
+                msg = r.get("results", {}).get("message", {})
                 txt = ""
                 if isinstance(msg, dict):
                     txt = msg.get("text", "") or msg.get("data", {}).get("text", "")
-                txt = txt or results.get("text", "") or item.get("artifacts", {}).get("message", "")
-                if txt and str(txt).strip():
-                    outputs_raw.append(str(txt).strip())
-    except Exception as exc:
-        print(f"⚠️ No se pudieron recorrer todos los outputs: {exc}")
+                if not txt:
+                    txt = r.get("results", {}).get("text", "")
+                if txt:
+                    outputs_raw.append(str(txt))
+    except Exception:
+        pass
 
-    resultado = {
-        "metodologico": None,
-        "tecnico": None,
-        "linguistico": None,
-        "consenso": None,
-        "raw": outputs_raw,
-        "errores_parseo": [],
-    }
+    resultado = {"metodologico": None, "tecnico": None, "linguistico": None, "consenso": None, "raw": outputs_raw}
 
-    for indice, texto in enumerate(outputs_raw):
-        parsed = _extraer_json_de_texto(texto)
-        if not parsed:
-            resultado["errores_parseo"].append({"output": indice, "motivo": "json_invalido"})
-            continue
-        agente = str(parsed.get("agente") or "").strip().lower()
-        tipo = str(parsed.get("tipo_resultado") or "").strip().lower()
-        if agente in {"metodologico", "tecnico", "linguistico"}:
-            resultado[agente] = _normalizar_reporte_agente(parsed, agente)
-        elif agente in {"consenso", "juez"} or tipo in {"diagnostico_preliminar", "dictamen_jerarquico"}:
-            resultado["consenso"] = parsed
+    for txt in outputs_raw:
+        # Intentar parsear JSON
+        limpio = txt.strip()
+        if limpio.startswith("```"):
+            match = __import__('re').search(r'```(?:json)?\s*([\s\S]*?)```', limpio)
+            if match:
+                limpio = match.group(1).strip()
+        ini = limpio.find('{')
+        fin = limpio.rfind('}')
+        if ini != -1 and fin != -1:
+            try:
+                parsed = _json.loads(limpio[ini:fin+1])
+                agente = parsed.get("agente", "")
+                if agente == "metodologico":
+                    resultado["metodologico"] = parsed
+                elif agente == "tecnico":
+                    resultado["tecnico"] = parsed
+                elif agente == "linguistico":
+                    resultado["linguistico"] = parsed
+                elif agente in ("consenso", "") and "rigor_score" in parsed:
+                    resultado["consenso"] = parsed
+                elif agente == "consenso":
+                    resultado["consenso"] = parsed
+            except Exception:
+                pass
 
-    # Algunos flujos solo exponen el último output.
+    # Si solo hay 1 output y tiene rigor_score → es el Consenso con todo anidado
     if resultado["consenso"] is None and len(outputs_raw) == 1:
-        parsed = _extraer_json_de_texto(outputs_raw[0])
-        if parsed:
-            resultado["consenso"] = parsed
+        try:
+            parsed = _json.loads(outputs_raw[0][outputs_raw[0].find('{'):outputs_raw[0].rfind('}')+1])
+            if "rigor_score" in parsed or "puntaje_final" in parsed:
+                resultado["consenso"] = parsed
+        except Exception:
+            pass
 
     return resultado
+
 
 
 
@@ -459,201 +391,78 @@ def _ids_en_estado(bloque: str, encabezados: list[str]) -> set[str]:
     return ids
 
 
-def _construir_rubrica_evaluada(
-    rubrica_id: str,
-    rubrica_md: str,
-    reporte_agente: Optional[dict] = None,
-    bloque_evaluacion: str = "",
-) -> dict:
-    """Combina la rúbrica MCP con la evaluación JSON del agente.
-
-    Un criterio ausente nunca se convierte silenciosamente en ``observado``.
-    Se marca como ``error_evaluacion`` para hacerlo visible y evitar un 50 % ficticio.
+def _construir_rubrica_evaluada(rubrica_id: str, rubrica_md: str, bloque_evaluacion: str) -> dict:
+    """
+    Devuelve la rúbrica completa con estado por ítem.
+    Si el juez no mencionó un ID, queda como OBSERVADO para que igual aparezca en el veredicto.
     """
     items_base = _parsear_items_rubrica_md(rubrica_md)
-    reporte = _normalizar_reporte_agente(reporte_agente, str((reporte_agente or {}).get("agente") or ""))
-    por_id = {
-        str(i.get("id") or "").upper(): i
-        for i in (reporte or {}).get("criterios", [])
-        if isinstance(i, dict) and i.get("id")
-    }
-
-    # Compatibilidad limitada con respuestas planas antiguas.
-    cumplidos = _ids_en_estado(bloque_evaluacion, ["Cumplidos", "Cumple"]) if not por_id else set()
-    no_cumplidos = _ids_en_estado(bloque_evaluacion, ["No cumplidos", "No cumple", "Incumplidos"]) if not por_id else set()
-    observados = _ids_en_estado(bloque_evaluacion, ["Observados", "Observado", "Parciales", "Parcial"]) if not por_id else set()
+    cumplidos = _ids_en_estado(bloque_evaluacion, ["Cumplidos", "Cumple"])
+    no_cumplidos = _ids_en_estado(bloque_evaluacion, ["No cumplidos", "No cumple", "Incumplidos"])
+    observados = _ids_en_estado(bloque_evaluacion, ["Observados", "Observado", "Parciales", "Parcial"])
 
     evaluaciones = []
-    ids_esperados = {item["id"].upper() for item in items_base}
-    duplicados = []
-    ids_vistos = []
-    for item in (reporte or {}).get("criterios", []):
-        iid = str(item.get("id") or "").upper()
-        if iid in ids_vistos and iid not in duplicados:
-            duplicados.append(iid)
-        ids_vistos.append(iid)
-
     for item in items_base:
         iid = item["id"].upper()
-        pts = float(item.get("puntos_max") or 0.0)
-        evaluado = por_id.get(iid)
-        if evaluado:
-            estado = _normalizar_estado_criterio(evaluado.get("estado"))
-            evidencia = evaluado.get("evidencia") or ""
-            ubicacion = evaluado.get("ubicacion") or ""
-            observacion = evaluado.get("justificacion") or ""
-            confianza = evaluado.get("confianza") or "media"
-        elif iid in no_cumplidos:
-            estado, evidencia, ubicacion, observacion, confianza = "no_cumple", "", "", "Marcado como no cumplido en la respuesta del comité.", "baja"
-        elif iid in cumplidos:
-            estado, evidencia, ubicacion, observacion, confianza = "cumple", "", "", "Marcado como cumplido en la respuesta del comité.", "baja"
-        elif iid in observados:
-            estado, evidencia, ubicacion, observacion, confianza = "observado", "", "", "Marcado como observado en la respuesta del comité.", "baja"
-        else:
-            estado, evidencia, ubicacion = "error_evaluacion", "", ""
-            observacion = "El agente no devolvió este criterio. Se requiere reintento o revisión humana."
-            confianza = "baja"
-
-        if estado == "cumple":
-            puntos_obtenidos = pts
-        elif estado == "observado":
-            puntos_obtenidos = pts * 0.5
-        else:
+        pts = item.get("puntos_max", 0.0)
+        # Precedencia: si un ID aparece en "No cumplidos" y también en otra parte,
+        # gana NO CUMPLE. Esto evita falsos positivos por menciones repetidas del juez.
+        if iid in no_cumplidos:
+            estado = "no_cumple"
             puntos_obtenidos = 0.0
-
+            observacion = "Criterio marcado como no cumplido por el comité jerárquico."
+        elif iid in cumplidos:
+            estado = "cumple"
+            puntos_obtenidos = pts
+            observacion = "Criterio marcado como cumplido por el comité jerárquico."
+        elif iid in observados:
+            estado = "observado"
+            puntos_obtenidos = 0.0
+            observacion = "Criterio observado por el comité jerárquico. Requiere revisión o evidencia adicional."
+        else:
+            estado = "observado"
+            puntos_obtenidos = 0.0
+            observacion = "No fue mencionado explícitamente en el dictamen; se conserva como observado para revisión."
         evaluaciones.append({
             "id": item["id"],
             "descripcion": item["descripcion"],
             "estado": estado,
             "puntos_max": pts,
-            "puntos_obtenidos": round(puntos_obtenidos, 4),
-            "evidencia": evidencia,
-            "ubicacion": ubicacion,
+            "puntos_obtenidos": puntos_obtenidos,
+            "evidencia": "Ver dictamen jerárquico" if iid in cumplidos or iid in no_cumplidos or iid in observados else "No especificada en el dictamen",
             "observacion": observacion,
-            "confianza": confianza,
         })
-
-    no_evaluables = [i for i in evaluaciones if i["estado"] == "no_evaluable"]
-    errores = [i for i in evaluaciones if i["estado"] == "error_evaluacion"]
-    max_total = sum(i["puntos_max"] for i in evaluaciones)
-    max_aplicable = sum(i["puntos_max"] for i in evaluaciones if i["estado"] != "no_evaluable")
-    obtenido = sum(i["puntos_obtenidos"] for i in evaluaciones)
 
     return {
         "rubrica_id": rubrica_id,
         "total_items": len(evaluaciones),
-        "puntaje_maximo": round(max_total, 4),
-        "puntaje_maximo_aplicable": round(max_aplicable, 4),
-        "puntaje_obtenido_estimado": round(obtenido, 4),
-        "items_no_evaluables": len(no_evaluables),
-        "items_con_error": len(errores),
-        "ids_duplicados": duplicados,
-        "ids_desconocidos": sorted(set(por_id) - ids_esperados),
-        "contrato_valido": not errores and not duplicados,
+        "puntaje_maximo": round(sum(i.get("puntos_max", 0.0) for i in evaluaciones), 4),
+        "puntaje_obtenido_estimado": round(sum(i.get("puntos_obtenidos", 0.0) for i in evaluaciones), 4),
         "items": evaluaciones,
     }
 
 
-def _construir_rubricas_detalle(datos_mcp: dict | None, agentes: Optional[dict] = None, texto_veredicto: str = "") -> dict:
-    """Construye las tres rúbricas completas usando prioritariamente JSON estructurado."""
+def _construir_rubricas_detalle(datos_mcp: dict | None, texto_veredicto: str) -> dict:
+    """Construye M/T/L completas para el frontend y el PDF descargable."""
     if not datos_mcp:
         return {}
-    agentes = agentes or {}
     return {
         "metodologica": _construir_rubrica_evaluada(
             datos_mcp.get("rubrica_metodologica_id", "M?"),
             datos_mcp.get("rubrica_metodologica", ""),
-            agentes.get("metodologico"),
             _extraer_bloque(texto_veredicto, "metodologica"),
         ),
         "tecnica": _construir_rubrica_evaluada(
             datos_mcp.get("rubrica_tecnica_id", "T?"),
             datos_mcp.get("rubrica_tecnica", ""),
-            agentes.get("tecnico"),
             _extraer_bloque(texto_veredicto, "tecnica"),
         ),
         "linguistica": _construir_rubrica_evaluada(
             datos_mcp.get("rubrica_linguistica_id", "L1"),
             datos_mcp.get("rubrica_linguistica", ""),
-            agentes.get("linguistico"),
             _extraer_bloque(texto_veredicto, "linguistica"),
         ),
     }
-
-
-def _calcular_metricas_oficiales(rubricas_detalle: dict) -> dict:
-    """Calcula puntajes, Rigor Score y veredicto exclusivamente en backend."""
-    pesos = {"metodologica": 0.40, "tecnica": 0.35, "linguistica": 0.25}
-    dimensiones = {}
-    rigor = 0.0
-    contrato_valido = True
-
-    for clave, peso in pesos.items():
-        rubrica = (rubricas_detalle or {}).get(clave) or {}
-        maximo_total = float(rubrica.get("puntaje_maximo") or 0.0)
-        maximo_aplicable = float(rubrica.get("puntaje_maximo_aplicable") or maximo_total)
-        obtenido_bruto = round(sum(float(i.get("puntos_obtenidos") or 0.0) for i in rubrica.get("items", [])), 4)
-        porcentaje = (obtenido_bruto / maximo_aplicable) if maximo_aplicable > 0 else 0.0
-        # Se mantiene la escala institucional original (10/7/3), aun cuando
-        # existan criterios no evaluables excluidos del denominador.
-        obtenido_escalado = round(porcentaje * maximo_total, 4)
-        valido_dimension = bool(rubrica.get("contrato_valido", False))
-        contrato_valido = contrato_valido and valido_dimension
-        dimensiones[clave] = {
-            "puntaje_obtenido": obtenido_escalado,
-            "puntaje_obtenido_bruto": obtenido_bruto,
-            "puntaje_maximo": round(maximo_total, 4),
-            "puntaje_maximo_aplicable": round(maximo_aplicable, 4),
-            "porcentaje": round(porcentaje, 4),
-            "peso": peso,
-            "items_no_evaluables": int(rubrica.get("items_no_evaluables") or 0),
-            "items_con_error": int(rubrica.get("items_con_error") or 0),
-            "contrato_valido": valido_dimension,
-        }
-        rigor += porcentaje * peso
-
-    rigor = round(max(0.0, min(1.0, rigor)), 4)
-    if rigor >= 0.80:
-        veredicto = "APROBADO"
-    elif rigor >= 0.60:
-        veredicto = "APROBADO CON OBSERVACIONES"
-    else:
-        veredicto = "RECHAZADO"
-
-    return {
-        "dimensiones": dimensiones,
-        "rigor_score": rigor,
-        "rigor_porcentaje": round(rigor * 100, 2),
-        "rigor_sobre_10": round(rigor * 10, 2),
-        "veredicto_oficial": veredicto,
-        "pesos": pesos,
-        "fuente": "backend_determinista",
-        "contrato_valido": contrato_valido,
-        "advertencia_contrato": None if contrato_valido else "Uno o más agentes omitieron criterios o devolvieron una estructura inválida.",
-    }
-
-
-def _anexar_resultado_oficial(texto: str, metricas: dict) -> str:
-    """Elimina scores/veredictos ambiguos del LLM y agrega el resultado oficial."""
-    texto = texto or ""
-    texto = re.sub(r'(?im)^\s*RIGOR\s*SCORE(?:\s*FINAL)?\s*[:=]\s*[0-9.]+.*$', '', texto)
-    texto = re.sub(r'(?im)^\s*VEREDICTO\s*FINAL\s*:\s*(?:APROBADO(?:\s+CON\s+OBSERVACIONES)?|RECHAZADO).*$','',texto)
-    dims = metricas.get("dimensiones", {})
-    met = dims.get("metodologica", {})
-    tec = dims.get("tecnica", {})
-    lin = dims.get("linguistica", {})
-    bloque = f"""
-
-===RESULTADO_OFICIAL_BACKEND===
-Puntaje metodológico: {met.get('puntaje_obtenido', 0):.2f} / {met.get('puntaje_maximo', 0):.2f} pts
-Puntaje técnico: {tec.get('puntaje_obtenido', 0):.2f} / {tec.get('puntaje_maximo', 0):.2f} pts
-Puntaje lingüístico: {lin.get('puntaje_obtenido', 0):.2f} / {lin.get('puntaje_maximo', 0):.2f} pts
-RIGOR SCORE FINAL: {metricas.get('rigor_score', 0):.4f}
-RIGOR PORCENTAJE: {metricas.get('rigor_porcentaje', 0):.2f}%
-VEREDICTO FINAL: {metricas.get('veredicto_oficial', 'RECHAZADO')}
-FUENTE: backend_determinista
-"""
-    return texto.rstrip() + bloque
 
 
 async def ejecutar_analisis_completo(filepath: str) -> dict:
@@ -685,7 +494,7 @@ async def ejecutar_analisis_completo(filepath: str) -> dict:
 
     # ── Extraer PDF ────────────────────────────────────────────────────
     try:
-        texto = _extraer_texto_pdf(filepath, rapido=True)
+        texto = _extraer_texto_pdf(filepath)
     except Exception as e:
         return {
             "secuencial": {"texto_crudo": "", "latencia_ms": 0, "exito": False, "error": str(e)},
@@ -730,9 +539,22 @@ async def ejecutar_analisis_completo(filepath: str) -> dict:
                 NODE_PROMPT_LINGUISTICO: {
                     "rubrica_linguistica": datos_mcp["rubrica_linguistica"]
                 },
+                # NODE_PROMPT_CONSENSO no tiene variables {rubrica_*}
+                # Sus variables son: {texto_tesis}, {reporte_metodologico}, {reporte_tecnico}, {reporte_linguistico}
+                # La rúbrica llega al consenso via system_prompt del DeepSeek
+                # Inyectar también en system_prompt de los agentes para refuerzo
+                NODE_AGENT_METODOLOGICO: {
+                    "system_prompt": _build_agent_system_prompt("metodologico", datos_mcp["rubrica_metodologica"], diseno_info)
+                },
+                NODE_AGENT_TECNICO: {
+                    "system_prompt": _build_agent_system_prompt("tecnico", datos_mcp["rubrica_tecnica"], diseno_info)
+                },
+                NODE_AGENT_LINGUISTICO: {
+                    "system_prompt": _build_agent_system_prompt("linguistico", datos_mcp["rubrica_linguistica"], diseno_info)
+                },
                 NODE_AGENT_CONSENSO: {
-                    "system_prompt": _build_consenso_system_prompt_secuencial(diseno_info)
-                }
+                    "system_prompt": _build_consenso_system_prompt(diseno_info)
+                },
             }
             print(f"  ✅ Rúbricas inyectadas: {rubricas_ids}")
         else:
@@ -763,84 +585,6 @@ async def ejecutar_analisis_completo(filepath: str) -> dict:
         "latencia_total_ms": int((time.time() - inicio_total) * 1000),
         "exito_general":   resultado_secuencial["exito"],
     }
-
-
-async def _auditoria_exhaustiva_jerarquica(texto_tesis: str, dictamen_inicial: str, diseno_info: dict) -> dict:
-    """Segunda pasada real para el veredicto jerárquico.
-
-    Verifica evidencia, contradicciones y coherencia entre los tres comités. No
-    recalcula el Rigor Score: los puntajes oficiales permanecen en el backend.
-    La función es tolerante a fallos; si DeepSeek no está disponible, el
-    veredicto inicial continúa siendo válido.
-    """
-    habilitada = os.getenv("JERARQUICO_AUDITORIA_EXHAUSTIVA", "true").lower() in {"1", "true", "si", "sí", "yes"}
-    api_key = os.getenv("DEEPSEEK_API_KEY", "")
-    if not habilitada or not api_key:
-        return {"texto": "", "latencia_ms": 0, "exito": False, "omitida": True}
-
-    modelo = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-    url = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completions")
-    max_chars = int(os.getenv("JERARQUICO_AUDITORIA_MAX_CHARS", "42000"))
-
-    prompt = f"""Eres el Auditor de Evidencia de un comité universitario. Realiza una segunda revisión exhaustiva del dictamen multiagente.
-
-CONTEXTO DETECTADO:
-{diseno_info}
-
-TESIS SEGMENTADA (fuente primaria):
-{texto_tesis[:max_chars]}
-
-DICTAMEN INICIAL DEL COMITÉ:
-{dictamen_inicial[:26000]}
-
-TAREAS OBLIGATORIAS:
-1. Verifica si las observaciones principales tienen evidencia rastreable en la tesis.
-2. Detecta contradicciones entre los análisis metodológico, técnico y lingüístico.
-3. Señala falsos positivos, afirmaciones no sustentadas o criterios que requieren revisión humana.
-4. Prioriza entre 5 y 10 hallazgos críticos, indicando área, evidencia breve y acción correctiva.
-5. Emite una conclusión de consistencia del dictamen: ALTA, MEDIA o BAJA.
-
-REGLAS:
-- No calcules ni modifiques puntajes, Rigor Score o veredicto oficial.
-- No inventes citas ni páginas. Si no existe evidencia suficiente, indícalo expresamente.
-- Responde en español, con estructura clara y concisa.
-"""
-
-    payload = {
-        "model": modelo,
-        "messages": [
-            {"role": "system", "content": "Auditas evidencia académica con rigor, trazabilidad y prudencia."},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.1,
-        "max_tokens": int(os.getenv("JERARQUICO_AUDITORIA_MAX_TOKENS", "2600")),
-        "stream": False,
-    }
-    inicio = time.time()
-    try:
-        async with httpx.AsyncClient(timeout=int(os.getenv("JERARQUICO_AUDITORIA_TIMEOUT", "180"))) as client:
-            r = await client.post(url, json=payload, headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            })
-            r.raise_for_status()
-        data = r.json()
-        texto = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-        return {
-            "texto": texto,
-            "latencia_ms": int((time.time() - inicio) * 1000),
-            "exito": bool(texto),
-            "omitida": False,
-        }
-    except Exception as e:
-        print(f"⚠️ Auditoría exhaustiva omitida por error no crítico: {e}")
-        return {
-            "texto": "",
-            "latencia_ms": int((time.time() - inicio) * 1000),
-            "exito": False,
-            "omitida": False,
-            "error": str(e),
-        }
 
 
 async def ejecutar_veredicto(filepath: str) -> dict:
@@ -913,9 +657,19 @@ async def ejecutar_veredicto(filepath: str) -> dict:
                 NODE_JER_PROMPT_LINGUISTICO: {
                     "rubrica_linguistica": datos_mcp["rubrica_linguistica"]
                 },
+                # Inyectar system_prompt con rúbricas en los DeepSeek del flujo Jerárquico
+                NODE_JER_AGENT_METODOLOGICO: {
+                    "system_prompt": _build_agent_system_prompt("metodologico", datos_mcp["rubrica_metodologica"], diseno_info)
+                },
+                NODE_JER_AGENT_TECNICO: {
+                    "system_prompt": _build_agent_system_prompt("tecnico", datos_mcp["rubrica_tecnica"], diseno_info)
+                },
+                NODE_JER_AGENT_LINGUISTICO: {
+                    "system_prompt": _build_agent_system_prompt("linguistico", datos_mcp["rubrica_linguistica"], diseno_info)
+                },
                 NODE_JER_AGENT_CONSENSO: {
-                    "system_prompt": _build_consenso_system_prompt_jerarquico(diseno_info)
-                }
+                    "system_prompt": _build_consenso_system_prompt(diseno_info)
+                },
             }
             print(f"✅ MCP rúbricas → {rubricas_ids['metodologica']} / {rubricas_ids['tecnica']} / {rubricas_ids['linguistica']}")
             print(f"  ✅ Rúbricas inyectadas en flujo Jerárquico: {rubricas_ids}")
@@ -933,49 +687,16 @@ async def ejecutar_veredicto(filepath: str) -> dict:
         tweaks if tweaks else None,
     )
 
-    # Segunda pasada real: audita evidencia y coherencia. Esto diferencia el
-    # veredicto exhaustivo del diagnóstico preliminar sin introducir esperas
-    # artificiales. Los puntajes siguen calculándose exclusivamente en backend.
-    auditoria = await _auditoria_exhaustiva_jerarquica(
-        texto,
-        resultado_jerarquico.get("texto_crudo", ""),
-        diseno_info,
-    )
-    if auditoria.get("exito"):
-        resultado_jerarquico["texto_crudo"] = (
-            resultado_jerarquico.get("texto_crudo", "").rstrip()
-            + "\n\n# AUDITORÍA DE EVIDENCIA Y CONSISTENCIA\n"
-            + auditoria["texto"]
-        )
-
-    agentes_jerarquicos = _extraer_todos_los_outputs(
-        resultado_jerarquico.get("raw_data", {})
-    )
     rubricas_detalle = _construir_rubricas_detalle(
         datos_mcp,
-        agentes_jerarquicos,
         resultado_jerarquico.get("texto_crudo", ""),
     )
-    metricas_oficiales = _calcular_metricas_oficiales(rubricas_detalle)
-    resultado_jerarquico["texto_original_llm"] = resultado_jerarquico.get("texto_crudo", "")
-    resultado_jerarquico["auditoria_exhaustiva"] = auditoria
-    resultado_jerarquico["latencia_ms"] = resultado_jerarquico.get("latencia_ms", 0) + auditoria.get("latencia_ms", 0)
-    resultado_jerarquico["texto_crudo"] = _anexar_resultado_oficial(
-        resultado_jerarquico.get("texto_crudo", ""), metricas_oficiales
-    )
-    resultado_jerarquico["rigor_score"] = metricas_oficiales["rigor_score"]
-    resultado_jerarquico["veredicto_oficial"] = metricas_oficiales["veredicto_oficial"]
 
     return {
         "jerarquico":      resultado_jerarquico,
         "diseno_info":     diseno_info,
         "rubricas_ids":    rubricas_ids,
-        "agentes":          agentes_jerarquicos,
         "rubricas_detalle": rubricas_detalle,
-        "metricas_oficiales": metricas_oficiales,
-        "auditoria_exhaustiva": auditoria,
-        "rigor_score": metricas_oficiales["rigor_score"],
-        "veredicto_oficial": metricas_oficiales["veredicto_oficial"],
         "hash_archivo":    hash_archivo,
         "latencia_total_ms": int((time.time() - inicio_total) * 1000),
         "exito_general":   resultado_jerarquico["exito"],
@@ -1283,49 +1004,67 @@ Puntaje máximo total: **{puntaje_maximo:.4f} pts**
 }}"""
 
 
-def _build_consenso_system_prompt_secuencial(diseno_info: dict) -> str:
-    enfoque  = diseno_info.get("enfoque",  "Cuantitativo")
-    diseno   = diseno_info.get("diseno",   "Descriptivo")
-    sublinea = diseno_info.get("sublinea", "Ingeniería de Software")
-
-    return f"""Eres el Agente Orquestador para un Diagnóstico Rápido de Tesis UPAO.
-
-CONTEXTO: Enfoque: {enfoque} | Diseño: {diseno} | Sublínea: {sublinea}
-
-Realiza un diagnóstico rápido cualitativo destacando las principales fortalezas y debilidades basándote en los reportes de los otros agentes.
-NO CALCULES NINGÚN PUNTAJE NI RIGOR SCORE. Esto se hará en el backend.
-
-FORMATO DE RESPUESTA OBLIGATORIO (JSON puro):
-{{
-  "tipo_resultado": "diagnostico_preliminar",
-  "agente": "consenso",
-  "resumen_ejecutivo": "[Breve resumen cualitativo en 2-3 lineas]",
-  "fortalezas_rapidas": ["Fortaleza 1", "Fortaleza 2"],
-  "debilidades_principales": ["Debilidad 1", "Debilidad 2", "Debilidad 3"],
-  "recomendaciones_inmediatas": ["Recomendación 1", "Recomendación 2"]
-}}"""
-
-def _build_consenso_system_prompt_jerarquico(diseno_info: dict) -> str:
+def _build_consenso_system_prompt(diseno_info: dict) -> str:
+    """System prompt del Agente Consenso con separadores para el frontend."""
     enfoque  = diseno_info.get("enfoque",  "Cuantitativo")
     diseno   = diseno_info.get("diseno",   "Descriptivo")
     sublinea = diseno_info.get("sublinea", "Ingeniería de Software")
 
     return f"""Eres el Presidente del Comité Evaluador de Tesis UPAO (Agente Consenso / Supervisor).
 
-Recibirás reportes de 3 agentes.
-CONTEXTO: Enfoque: {enfoque} | Diseño: {diseno} | Sublínea: {sublinea}
+Recibirás los 3 reportes JSON de los agentes especializados.
+IMPORTANTE: Los agentes evaluaron ítem por ítem usando rúbricas oficiales del MCP.
 
-TU TAREA EXCLUSIVA ES EL ANÁLISIS CUALITATIVO.
-NO REALICES NINGÚN CÁLCULO MATEMÁTICO NI ASIGNES PUNTAJES. 
-Los puntajes oficiales los calculará el sistema en el backend para evitar errores y alucinaciones.
+## CONTEXTO
+- Enfoque: {enfoque} | Diseño: {diseno} | Sublínea: {sublinea}
 
-FORMATO DE RESPUESTA OBLIGATORIO (JSON puro):
-{{
-  "tipo_resultado": "dictamen_jerarquico",
-  "agente": "consenso",
-  "resumen_ejecutivo": "[Resumen cualitativo general de la tesis y los hallazgos en 3-5 líneas]",
-  "contradicciones_detectadas": ["Contradicción entre agentes 1", "Contradicción entre agentes 2"],
-  "hallazgos_prioritarios": ["Hallazgo metodológico crítico", "Hallazgo técnico crítico", "Hallazgo lingüístico crítico"],
-  "justificacion": "[Justificación cualitativa de por qué el trabajo presenta fallas o fortalezas a nivel global]",
-  "plan_mejora_priorizado": ["Mejora 1", "Mejora 2", "Mejora 3"]
-}}"""
+## PASO 1: EXTRAER PUNTAJES DE CADA AGENTE
+Del JSON de cada agente extrae:
+  - puntaje_total y puntaje_maximo
+  - Calcular porcentaje = puntaje_total / puntaje_maximo
+
+## PASO 2: CALCULAR RIGOR SCORE PONDERADO
+Los puntajes máximos de las rúbricas UPAO son: Metodológico=10pts, Técnico=7pts, Lingüístico=3pts (Total=20pts)
+Por eso las ponderaciones son: Metodológico=50%, Técnico=35%, Lingüístico=15%
+
+rigor_score = (pct_met * 0.50) + (pct_tec * 0.35) + (pct_lin * 0.15)
+Donde pct_X = puntaje_total_agente / puntaje_maximo_agente (valor entre 0 y 1)
+
+## PASO 3: CRITERIO DE DICTAMEN
+- rigor_score >= 0.80 → APROBADO
+- rigor_score >= 0.60 → APROBADO CON OBSERVACIONES
+- rigor_score < 0.60  → RECHAZADO
+
+## PASO 4: AUDITORÍA ANTI-ALUCINACIONES
+Verifica que cada debilidad_critica de los agentes tenga evidencia real en el texto.
+Si un agente marcó cumple sin evidencia textual → reduce su puntaje.
+
+## PASO 5: RESPUESTA CON SEPARADORES (OBLIGATORIO usar estos separadores exactos)
+
+===METODOLOGICO===
+[Resumen de 3-5 hallazgos críticos del Agente Metodológico con puntaje: X.XX / Y.YY pts]
+
+===TECNICO===
+[Resumen de 3-5 hallazgos críticos del Agente Técnico con puntaje: X.XX / Y.YY pts]
+
+===LINGUISTICO===
+[Lista numerada de errores APA y redacción del Agente Lingüístico con puntaje: X.XX / Y.YY pts]
+
+===DICTAMEN===
+RESUMEN EJECUTIVO: [3-4 líneas sobre la tesis]
+
+RIGOR SCORE CALCULADO:
+- Metodológico: [obtenido] / [maximo] = [porcentaje]% × 50% = [aporte]
+- Técnico:      [obtenido] / [maximo] = [porcentaje]% × 35% = [aporte]
+- Lingüístico:  [obtenido] / [maximo] = [porcentaje]% × 15% = [aporte]
+- RIGOR SCORE FINAL: [valor entre 0.0 y 1.0]
+
+AUDITORÍA DE CONSISTENCIA: [¿Hay contradicciones entre agentes? ¿Algún cumple sin evidencia?]
+
+VEREDICTO FINAL: APROBADO / APROBADO CON OBSERVACIONES / RECHAZADO
+JUSTIFICACIÓN: [3-4 líneas basadas en los puntajes calculados]
+
+PLAN DE MEJORA:
+1. [Alta prioridad] [Acción concreta] — Responsable: Agente Metodológico/Técnico/Lingüístico
+2. [Media prioridad] [Acción concreta]
+3. [Baja prioridad] [Acción concreta]"""

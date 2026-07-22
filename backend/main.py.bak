@@ -315,11 +315,7 @@ async def _bg_veredicto(thesis_id: int, filepath: str):
                 "jerarquico": flujos["jerarquico"],
                 "diseno_info": flujos.get("diseno_info"),
                 "rubricas_ids": flujos.get("rubricas_ids", {}),
-                "agentes": flujos.get("agentes", {}),
                 "rubricas_detalle": flujos.get("rubricas_detalle", {}),
-                "metricas_oficiales": flujos.get("metricas_oficiales", {}),
-                "rigor_score": flujos.get("rigor_score", 0.0),
-                "veredicto_oficial": flujos.get("veredicto_oficial", ""),
                 "exito_general": flujos.get("exito_general", False),
             }
 

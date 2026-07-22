@@ -257,45 +257,6 @@ def construir_input_langflow(datos_pdf: dict) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-
-def construir_input_langflow_rapido(datos_pdf: dict) -> str:
-    """Construye un input reducido para el diagnóstico preliminar secuencial.
-
-    Conserva solo las secciones indispensables y limita cada una para evitar
-    reenviar una tesis extensa a todos los agentes del flujo.
-    """
-    capitulos = extraer_capitulos(datos_pdf)
-    # El diagnóstico preliminar debe ser realmente ligero. Se priorizan
-    # fragmentos ejecutivos y se evita enviar suficiente contexto como para
-    # reproducir una evaluación exhaustiva con rúbrica completa.
-    limites = {
-        "resumen": 1400,
-        "problema": 1600,
-        "objetivos": 1200,
-        "hipotesis": 600,
-        "metodologia": 1800,
-        "arquitectura": 1400,
-        "resultados": 1000,
-        "conclusiones": 900,
-    }
-    capitulos_reducidos = {
-        clave: (capitulos.get(clave, "") or "")[:limite]
-        for clave, limite in limites.items()
-    }
-
-    payload = {
-        "metadata": {
-            "total_paginas": datos_pdf.get("total_paginas", 0),
-            "total_palabras": datos_pdf.get("total_palabras", 0),
-            "total_caracteres": datos_pdf.get("total_caracteres", 0),
-            "tipo_input": "diagnostico_preliminar_reducido"
-        },
-        "capitulos": capitulos_reducidos
-    }
-
-    import json
-    return json.dumps(payload, ensure_ascii=False, indent=2)
-
 def validar_pdf(filepath: str) -> tuple[bool, Optional[str]]:
     try:
         doc = fitz.open(filepath)

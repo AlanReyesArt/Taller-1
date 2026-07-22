@@ -60,19 +60,7 @@ function AgenteCard({ titulo, icono, respuesta, error, latencia_ms }) {
 // ── Tabla de ítems de rúbrica por agente ─────────────────────────────
 function TablaItems({ items = [], titulo, color, bg }) {
   const [expandida, setExpandida] = useState(true)
-  
-  const validos = items.filter(i => {
-    const st = String(i.estado || '').toLowerCase();
-    return st && st !== 'error_evaluacion' && st !== 'no evaluado';
-  });
-  
-  if (!items || items.length === 0) {
-    return (
-      <div style={{ padding: '12px 16px', fontSize: 13, color: '#6B7280', fontStyle: 'italic', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E5E7EB', marginTop: 8 }}>
-        Evaluación ítem por ítem no disponible en este flujo.
-      </div>
-    );
-  }
+  if (!items || items.length === 0) return null
 
   const aprobados  = items.filter(i => i.estado === 'cumple')
   const parciales  = items.filter(i => i.estado === 'parcial' || i.estado === 'observado')
@@ -111,9 +99,9 @@ function TablaItems({ items = [], titulo, color, bg }) {
             <div key={idx} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 80px', gap: 8, padding: '6px 16px', borderBottom: '1px solid #F3F4F6', alignItems: 'start', fontSize: 12 }}>
               <span style={{ background: estadoBg, color: estadoColor, borderRadius: 6, padding: '2px 6px', fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>{estadoIcon} {item.id || `#${idx+1}`}</span>
               <div>
-                <div style={{ color: '#374151', lineHeight: 1.4 }}>{item.descripcion || '—'}</div>
+                <div style={{ color: '#374151', lineHeight: 1.4 }}>{item.descripcion?.slice(0, 120) || '—'}</div>
                 {item.evidencia && item.evidencia !== 'No encontrado en el documento' && (
-                  <div style={{ color: '#6B7280', fontSize: 11, marginTop: 4, fontStyle: 'italic' }}>"{item.evidencia}"</div>
+                  <div style={{ color: '#6B7280', fontSize: 11, marginTop: 2, fontStyle: 'italic' }}>"{item.evidencia?.slice(0, 80)}"</div>
                 )}
               </div>
               <span style={{ textAlign: 'right', fontWeight: 600, color: estadoColor }}>{(parseFloat(item.puntos_obtenidos)||0).toFixed(2)} / {(parseFloat(item.puntos_max)||0).toFixed(2)}</span>
@@ -166,26 +154,6 @@ function SeccionAgente({ titulo, icono, color, bg, texto, items }) {
 // ── Extractor de secciones por separador ===X=== ─────────────────────
 function _extraerSeccion(txt, clave) {
   if (!txt) return ''
-
-  // Si es un JSON estructurado, no intentar extraer con regex de markdown
-  try {
-    let jsonStr = txt;
-    if (txt.includes('```json')) {
-      jsonStr = txt.split('```json')[1].split('```')[0];
-    } else if (txt.trim().startsWith('{')) {
-      const firstBrace = txt.indexOf('{');
-      const lastBrace = txt.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        jsonStr = txt.substring(firstBrace, lastBrace + 1);
-      }
-    }
-    const asJson = JSON.parse(jsonStr)
-    if (asJson && typeof asJson === 'object' && asJson.tipo_resultado) {
-      return ''
-    }
-  } catch (e) {
-    // No es JSON puro, continuamos con la extracción basada en texto.
-  }
 
   const normalizar = (v = '') => v
     .toString()
@@ -247,24 +215,6 @@ function _extraerSeccion(txt, clave) {
 
 function _extraerDictamen(txt) {
   if (!txt) return ''
-  try {
-    let jsonStr = txt;
-    if (txt.includes('```json')) {
-      jsonStr = txt.split('```json')[1].split('```')[0];
-    } else if (txt.trim().startsWith('{')) {
-      const firstBrace = txt.indexOf('{');
-      const lastBrace = txt.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        jsonStr = txt.substring(firstBrace, lastBrace + 1);
-      }
-    }
-    const json = JSON.parse(jsonStr)
-    if (json && json.resumen_ejecutivo) {
-      return json.resumen_ejecutivo
-    }
-  } catch (e) {
-    // ignorar
-  }
   return _extraerSeccion(txt, 'DICTAMEN') || _extraerSeccion(txt, 'VEREDICTO') || ''
 }
 
@@ -278,7 +228,7 @@ function _itemsRubricaCompleta(rubricasDetalle, clave, fallback = []) {
   if (items.length > 0) {
     return items.map(i => ({
       ...i,
-      estado: i.estado || 'error_evaluacion',
+      estado: i.estado === 'observado' ? 'observado' : (i.estado || 'observado'),
       puntos_max: Number(i.puntos_max || 0),
       puntos_obtenidos: Number(i.puntos_obtenidos || 0),
     }))
@@ -286,7 +236,7 @@ function _itemsRubricaCompleta(rubricasDetalle, clave, fallback = []) {
 
   return (fallback || []).map(i => ({
     ...i,
-    estado: i.estado || 'error_evaluacion',
+    estado: i.estado === 'observado' ? 'observado' : (i.estado || 'observado'),
     puntos_max: Number(i.puntos_max || 0),
     puntos_obtenidos: Number(i.puntos_obtenidos || 0),
   }))
@@ -302,7 +252,7 @@ function _puntajeDesdeRubricaDetalle(rubricasDetalle, clave) {
 }
 
 // ── Tarjeta del veredicto (Jerárquico) ───────────────────────────────
-function VeredictoCard({ respuesta, error, latencia_ms, agentes, rubricaIds, rubricasDetalle, disenoInfo, metricasOficiales, veredictoOficial }) {
+function VeredictoCard({ respuesta, error, latencia_ms, agentes, rubricaIds, rubricasDetalle, disenoInfo }) {
   if (error) return (
     <div style={{ background: '#FEE2E2', borderRadius: 12, padding: 24, color: '#7F1D1D' }}>
       <strong>❌ Error al obtener veredicto:</strong> {error}
@@ -311,13 +261,8 @@ function VeredictoCard({ respuesta, error, latencia_ms, agentes, rubricaIds, rub
   if (!respuesta) return null
 
   const textoUp = respuesta.toUpperCase()
-  const veredictoBackend = (veredictoOficial || metricasOficiales?.veredicto_oficial || '').toUpperCase()
-  const esRechazado = veredictoBackend
-    ? veredictoBackend === 'RECHAZADO'
-    : (textoUp.includes('RECHAZ') || textoUp.includes('NO APROBADO'))
-  const esObservaciones = veredictoBackend
-    ? veredictoBackend.includes('OBSERV')
-    : (!esRechazado && textoUp.includes('OBSERV'))
+  const esRechazado    = textoUp.includes('RECHAZ') || textoUp.includes('NO APROBADO')
+  const esObservaciones = !esRechazado && textoUp.includes('OBSERV')
   const veredictoColor = esRechazado ? '#7F1D1D' : esObservaciones ? '#92400E' : '#065F46'
   const veredictoIcon  = esRechazado ? '❌' : esObservaciones ? '⚠️' : '✅'
   const veredictoLabel = esRechazado ? 'RECHAZADO' : esObservaciones ? 'APROBADO CON OBSERVACIONES' : 'APROBADO'
@@ -370,10 +315,7 @@ function VeredictoCard({ respuesta, error, latencia_ms, agentes, rubricaIds, rub
   )
 
   const rigorMatch = respuesta.match(/RIGOR SCORE FINAL[:\s]*([0-9.]+)/i)
-  const rigorBackend = Number(metricasOficiales?.rigor_score)
-  const rigorScore = Number.isFinite(rigorBackend)
-    ? rigorBackend
-    : (rigorMatch ? parseFloat(rigorMatch[1]) : null)
+  const rigorScore = rigorMatch ? parseFloat(rigorMatch[1]) : null
 
   const secMet  = _extraerSeccion(respuesta, 'METODOLOGICO')
   const secTec  = _extraerSeccion(respuesta, 'TECNICO')
@@ -467,21 +409,12 @@ function VeredictoCard({ respuesta, error, latencia_ms, agentes, rubricaIds, rub
       ) : (
         /* Fallback: mostrar texto completo si no hay separadores */
         <>
-          {itemsMet.length > 0 && <SeccionAgente titulo="Agente Metodológico" icono="📐" color="#1D4ED8" bg="#EFF6FF" texto={secMet} items={itemsMet} />}
-          {itemsTec.length > 0 && <SeccionAgente titulo="Agente Técnico"       icono="⚙️" color="#6D28D9" bg="#F5F3FF" texto={secTec} items={itemsTec} />}
-          {itemsLin.length > 0 && <SeccionAgente titulo="Agente Lingüístico"   icono="📝" color="#065F46" bg="#ECFDF5" texto={secLin} items={itemsLin} />}
+          {itemsMet.length > 0 && <SeccionAgente titulo="Agente Metodológico" icono="📐" color="#1D4ED8" bg="#EFF6FF" texto="" items={itemsMet} />}
+          {itemsTec.length > 0 && <SeccionAgente titulo="Agente Técnico"       icono="⚙️" color="#6D28D9" bg="#F5F3FF" texto="" items={itemsTec} />}
+          {itemsLin.length > 0 && <SeccionAgente titulo="Agente Lingüístico"   icono="📝" color="#065F46" bg="#ECFDF5" texto="" items={itemsLin} />}
           <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 10, padding: 16 }}>
             <div style={{ fontSize: 12, color: '#6B7280', fontWeight: 600, marginBottom: 8 }}>📄 Dictamen completo del Comité</div>
-            <div style={{ fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.7, maxHeight: 500, overflowY: 'auto' }}>
-              {(() => {
-                try {
-                  const asJson = JSON.parse(respuesta);
-                  return asJson.resumen_ejecutivo || respuesta;
-                } catch(e) {
-                  return respuesta;
-                }
-              })()}
-            </div>
+            <div style={{ fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.7, maxHeight: 500, overflowY: 'auto' }}>{respuesta}</div>
           </div>
         </>
       )}
@@ -548,62 +481,28 @@ function _obtenerEstadoDiagnostico(textoArea) {
   return { icono: '🟢', texto: 'Adecuado', color: '#047857', border: '#86EFAC', detalle: 'No se detectan alertas críticas.' }
 }
 
-function QuickAnalysisCard({ texto, latencia_ms, disenoInfo, agentes }) {
+function QuickAnalysisCard({ texto, latencia_ms, disenoInfo }) {
   const txt = texto || ''
-  const consenso = agentes?.consenso && agentes.consenso.tipo_resultado === 'diagnostico_preliminar'
-    ? agentes.consenso
-    : null
-  const estadoGeneral = consenso?.estado_diagnostico || 'requiere_revision'
-  const configuracionEstado = {
-    sin_alertas_relevantes: { label: 'SIN ALERTAS RELEVANTES', color: '#047857', bg: '#D1FAE5', icono: '🟢' },
-    requiere_revision: { label: 'REQUIERE REVISIÓN', color: '#92400E', bg: '#FEF3C7', icono: '🟡' },
-    atencion_prioritaria: { label: 'ATENCIÓN PRIORITARIA', color: '#B91C1C', bg: '#FEE2E2', icono: '🔴' },
-  }
-  const estadoVisual = configuracionEstado[estadoGeneral] || configuracionEstado.requiere_revision
-  const { label: veredicto, color, bg, icono } = estadoVisual
+  const veredicto = _extraerVeredictoSimple(txt)
+  const rechazado = /RECHAZ/i.test(veredicto)
+  const aprobado = /APROB/i.test(veredicto) && !/OBSERV/i.test(veredicto)
+  const color = rechazado ? '#7F1D1D' : aprobado ? '#065F46' : '#92400E'
+  const bg = rechazado ? '#FEE2E2' : aprobado ? '#D1FAE5' : '#FEF3C7'
+  const icono = rechazado ? '❌' : aprobado ? '✅' : '⚠️'
 
-  // Si el texto completo es un JSON, ya _extraerSeccion devuelve ''. Así evitamos repetir el JSON crudo.
-  let secMet = _extraerSeccion(txt, 'METODOLOGICO')
-  let secTec = _extraerSeccion(txt, 'TECNICO')
-  let secLin = _extraerSeccion(txt, 'LINGUISTICO')
+  const secMet = _extraerSeccion(txt, 'METODOLOGICO') || txt
+  const secTec = _extraerSeccion(txt, 'TECNICO') || txt
+  const secLin = _extraerSeccion(txt, 'LINGUISTICO') || txt
 
-  // Evitamos hacer `|| txt` si txt es JSON
-  let esJson = false;
-  try {
-    JSON.parse(txt);
-    esJson = true;
-  } catch(e){}
+  const estadoMet = _obtenerEstadoDiagnostico(secMet)
+  const estadoTec = _obtenerEstadoDiagnostico(secTec)
+  const estadoLin = _obtenerEstadoDiagnostico(secLin)
 
-  if (!esJson) {
-    secMet = secMet || txt;
-    secTec = secTec || txt;
-    secLin = secLin || txt;
-  }
-
-  let fortalezas = consenso?.fortalezas_principales || _extraerListaSimple(txt, 'Fortalezas', 3)
-  let debilidades = consenso?.debilidades_principales || _extraerListaSimple(txt, 'Debilidades', 6)
-  let recomendaciones = consenso?.recomendaciones_inmediatas || _extraerListaSimple(txt, 'Recomendaciones', 3)
-  if (debilidades.length === 0) debilidades = (txt.match(/\d+\.\s*[^\n]*(?:FALTA|No se|Ausencia|Errores|carece)[^\n]*/gi) || []).slice(0, 6).map(x => x.replace(/^\d+\.\s*/, ''))
+  let fortalezas = _extraerListaSimple(txt, 'Fortalezas', 3)
+  let debilidades = _extraerListaSimple(txt, 'Debilidades', 3)
+  let recomendaciones = _extraerListaSimple(txt, 'Recomendaciones', 3)
+  if (debilidades.length === 0) debilidades = (txt.match(/\d+\.\s*[^\n]*(?:FALTA|No se|Ausencia|Errores|carece)[^\n]*/gi) || []).slice(0, 3).map(x => x.replace(/^\d+\.\s*/, ''))
   if (recomendaciones.length === 0) recomendaciones = (txt.match(/\[Alta\][^\n]+|\[Media\][^\n]+|\[Baja\][^\n]+/gi) || []).slice(0, 3)
-
-  // Algunas respuestas concentran las observaciones en la lista final en vez
-  // de repetirlas dentro de cada bloque. Se combinan ambas fuentes para evitar
-  // mostrar "Adecuado" cuando sí existen debilidades explícitas del área.
-  const debMet = debilidades.filter(x => /metodol[oó]g/i.test(x)).join('\n')
-  const debTec = debilidades.filter(x => /t[eé]cnic/i.test(x)).join('\n')
-  const debLin = debilidades.filter(x => /ling[uü][ií]st|redacci[oó]n|apa|citaci[oó]n|ortograf/i.test(x)).join('\n')
-  const estadoDesdeCodigo = (codigo, fallbackTexto) => {
-    const mapa = {
-      sin_alertas_relevantes: { icono: '🟢', texto: 'Sin alertas relevantes', color: '#047857', border: '#86EFAC', detalle: 'No se detectan alertas críticas en la muestra.' },
-      requiere_revision: { icono: '🟡', texto: 'Requiere revisión', color: '#92400E', border: '#FCD34D', detalle: 'Presenta observaciones importantes.' },
-      atencion_prioritaria: { icono: '🔴', texto: 'Atención prioritaria', color: '#B91C1C', border: '#FCA5A5', detalle: 'Requiere correcciones prioritarias.' },
-    }
-    return mapa[codigo] || _obtenerEstadoDiagnostico(fallbackTexto)
-  }
-  const niveles = consenso?.niveles_por_dimension || {}
-  const estadoMet = estadoDesdeCodigo(niveles.metodologico, `${secMet}\n${debMet}`)
-  const estadoTec = estadoDesdeCodigo(niveles.tecnico, `${secTec}\n${debTec}`)
-  const estadoLin = estadoDesdeCodigo(niveles.linguistico, `${secLin}\n${debLin}`)
 
   const EstadoMini = ({ label, estado }) => (
     <div style={{ background: '#fff', border: `1.5px solid ${estado.border}`, borderRadius: 12, padding: 12 }}>
@@ -1160,7 +1059,7 @@ export default function Dashboard() {
                       const secDict = _extraerDictamen(txt)
                       return (
                         <>
-                          <QuickAnalysisCard texto={txt} latencia_ms={secuencial.latencia_ms} disenoInfo={disenoInfo} agentes={agentes} />
+                          <QuickAnalysisCard texto={txt} latencia_ms={secuencial.latencia_ms} disenoInfo={disenoInfo} />
                           {/* Detalle por agentes oculto por defecto para mantener el análisis rápido como diagnóstico ejecutivo */}
                           <div style={{ display: 'none' }}>
                           <div style={{ border: '2px solid #3B82F6', borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
@@ -1240,8 +1139,6 @@ export default function Dashboard() {
                       rubricaIds={r.rubricas_ids}
                       rubricasDetalle={r.rubricas_detalle}
                       disenoInfo={r.diseno_info}
-                      metricasOficiales={r.metricas_oficiales}
-                      veredictoOficial={r.veredicto_oficial}
                     />
                   </>
                 )}
@@ -1371,8 +1268,8 @@ export default function Dashboard() {
                 )}
 
                 {/* ── HU-12: Lista de errores APA — visible en análisis completo ── */}
-                {(tipoAnalisis === 'analisis_completo' || tipoAnalisis === 'flujo_jerarquico') && (() => {
-                  const rawT = secuencial?.texto_crudo || jerarquico?.texto_crudo || ''; const textoLing = _extraerSeccion(rawT, 'lingu') || rawT
+                {tipoAnalisis === 'analisis_completo' && (() => {
+                  const textoLing = _extraerSeccion(secuencial?.texto_crudo || '', 'lingu')
                   if (!textoLing) return null
                   // Solo extraer líneas numeradas del bloque LINGUISTICO
                   const erroresApa = []
