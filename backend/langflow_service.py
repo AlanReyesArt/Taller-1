@@ -742,12 +742,8 @@ async def ejecutar_analisis_completo(filepath: str) -> dict:
 
     # ── Paso 3: Ejecutar flujo Secuencial con tweaks ──────────────────
     print("🔄 [3/3] Flujo Secuencial en Langflow (con rúbricas inyectadas)...")
-    resultado_secuencial = await _ejecutar_flujo(
-        "Secuencial",
-        FLOW_ID_SECUENCIAL,
-        texto,
-        tweaks if tweaks else None,
-    )
+    print("🔄 [3/3] Simulando Flujo Secuencial en Python puro...")
+    resultado_secuencial = await _simular_flujo_jerarquico_secuencial(texto, datos_mcp or {}, diseno_info, False)
 
     # Extraer outputs por agente del resultado
     todos_outputs = _extraer_todos_los_outputs(
@@ -926,12 +922,8 @@ async def ejecutar_veredicto(filepath: str) -> dict:
 
     # ── Paso 3: Ejecutar flujo Jerárquico ────────────────────────────
     print("🔄 [3/3] Flujo Jerárquico en Langflow (con rúbricas inyectadas)...")
-    resultado_jerarquico = await _ejecutar_flujo(
-        "Jerarquico",
-        FLOW_ID_JERARQUICO,
-        texto,
-        tweaks if tweaks else None,
-    )
+    print("🔄 [3/3] Simulando Flujo Jerárquico en Python puro...")
+    resultado_jerarquico = await _simular_flujo_jerarquico_secuencial(texto, datos_mcp or {}, diseno_info, True)
 
     # Segunda pasada real: audita evidencia y coherencia. Esto diferencia el
     # veredicto exhaustivo del diagnóstico preliminar sin introducir esperas
@@ -1088,12 +1080,9 @@ Recomendaciones finales:
         }
     }
 
-    return await _ejecutar_flujo(
-        "HumanLoop",
-        FLOW_ID_HUMAN_LOOP,
-        payload,
-        tweaks,
-    )
+    print("🔄 Simulando Flujo Human-in-the-Loop en Python puro...")
+    system_prompt = tweaks[NODE_HUMAN_AGENT_FINAL]["system_prompt"]
+    return await _simular_flujo_human_loop(payload, system_prompt)
 async def ejecutar_debate_red(filepath: str) -> dict:
     """
     Flujo de Red.
@@ -1329,3 +1318,103 @@ FORMATO DE RESPUESTA OBLIGATORIO (JSON puro):
   "justificacion": "[Justificación cualitativa de por qué el trabajo presenta fallas o fortalezas a nivel global]",
   "plan_mejora_priorizado": ["Mejora 1", "Mejora 2", "Mejora 3"]
 }}"""
+
+
+
+async def _simular_agente_deepseek(system_prompt: str, user_prompt: str, agente: str = "") -> str:
+    import json
+    import httpx
+    import asyncio
+    api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    modelo = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    url = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completions")
+    
+    payload = {
+        "model": modelo,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt[:80000]},
+        ],
+        "temperature": 0.1,
+    }
+    
+    print(f"  -> Iniciando Agente {agente}...")
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            r = await client.post(url, json=payload, headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            })
+            r.raise_for_status()
+            
+        print(f"  OK Agente {agente} completado")
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"  Error en Agente {agente}: {e}")
+        return f"{{\"error\": \"{str(e)}\"}}"
+
+async def _simular_flujo_jerarquico_secuencial(texto: str, datos_mcp: dict, diseno_info: dict, es_jerarquico: bool) -> dict:
+    import time
+    import asyncio
+    t0 = time.time()
+    
+    pm = _build_agent_system_prompt("metodologico", datos_mcp.get("rubrica_metodologica", ""), diseno_info)
+    pt = _build_agent_system_prompt("tecnico", datos_mcp.get("rubrica_tecnica", ""), diseno_info)
+    pl = _build_agent_system_prompt("linguistico", datos_mcp.get("rubrica_linguistica", ""), diseno_info)
+    
+    res_m, res_t, res_l = await asyncio.gather(
+        _simular_agente_deepseek(pm, texto, "Metodologico"),
+        _simular_agente_deepseek(pt, texto, "Tecnico"),
+        _simular_agente_deepseek(pl, texto, "Linguistico")
+    )
+    
+    if es_jerarquico:
+        p_consenso = _build_consenso_system_prompt_jerarquico(diseno_info)
+    else:
+        p_consenso = _build_consenso_system_prompt_secuencial(diseno_info)
+        
+    user_consenso = f"Dictamen Metodologico:\n{res_m}\n\nDictamen Tecnico:\n{res_t}\n\nDictamen Linguistico:\n{res_l}"
+    
+    res_consenso = await _simular_agente_deepseek(p_consenso, user_consenso, "Consenso")
+    latencia = int((time.time() - t0) * 1000)
+    
+    return {
+        "texto_crudo": res_consenso,
+        "latencia_ms": latencia,
+        "exito": True,
+        "error": None,
+        "raw_data": {
+            "outputs": [
+                {
+                    "outputs": [
+                        {"results": {"message": {"text": res_m}}},
+                        {"results": {"message": {"text": res_t}}},
+                        {"results": {"message": {"text": res_l}}},
+                        {"results": {"message": {"text": res_consenso}}}
+                    ]
+                }
+            ]
+        }
+    }
+
+async def _simular_flujo_human_loop(payload: str, system_prompt: str) -> dict:
+    import time
+    t0 = time.time()
+    res = await _simular_agente_deepseek(system_prompt, payload, "HumanLoop")
+    latencia = int((time.time() - t0) * 1000)
+    
+    return {
+        "texto_crudo": res,
+        "latencia_ms": latencia,
+        "exito": True,
+        "error": None,
+        "raw_data": {
+            "outputs": [
+                {
+                    "outputs": [
+                        {"results": {"message": {"text": res}}}
+                    ]
+                }
+            ]
+        }
+    }
