@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const DIRECT_API_URL = import.meta.env.VITE_API_URL || ''
 
-const api = axios.create({ baseURL: '/api' })
+const api = axios.create({ baseURL: DIRECT_API_URL || '/api' })
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
@@ -78,8 +78,8 @@ export const getMyThesis = async () => {
 
 export const downloadReport = (thesisId) => {
   const token = localStorage.getItem('token')
-  const base = DIRECT_API_URL || window.location.origin
-  window.open(`${base}/api/thesis/${thesisId}/report?token=${token}`, '_blank')
+  const baseUrl = DIRECT_API_URL || '/api'
+  window.open(`${baseUrl}/thesis/${thesisId}/report?token=${token}`, '_blank')
 }
 
 // Maestro
