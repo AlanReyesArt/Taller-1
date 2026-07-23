@@ -831,7 +831,7 @@ export default function Dashboard() {
   useEffect(() => { cargarTesis(); return () => clearInterval(pollingRef.current) }, [])
 
   const cargarTesis = async () => {
-    try { setTesisList(await getMyThesis()) } catch {}
+    try { setTesisList(await getMyThesis()) } catch (err) { if (err.response?.status === 404) { clearInterval(pollingRef.current); setAnalyzing(false); setUploadError('El servidor se reinició o la tesis fue eliminada. Por favor, vuelve a subir el documento.'); } }
   }
 
   const iniciarPolling = (thesisId) => {
@@ -846,7 +846,7 @@ export default function Dashboard() {
           setTab('resultado')
           cargarTesis()
         }
-      } catch {}
+      } catch (err) { if (err.response?.status === 404) { clearInterval(pollingRef.current); setAnalyzing(false); setUploadError('El servidor se reinició o la tesis fue eliminada. Por favor, vuelve a subir el documento.'); } }
     }, 5000)
   }
 
@@ -892,7 +892,7 @@ export default function Dashboard() {
       setAnalisis(res)
       if (res.estado === 'en_analisis') { setAnalyzing(true); iniciarPolling(tesis.id) }
       else setAnalyzing(false)
-    } catch {}
+    } catch (err) { if (err.response?.status === 404) { clearInterval(pollingRef.current); setAnalyzing(false); setUploadError('El servidor se reinició o la tesis fue eliminada. Por favor, vuelve a subir el documento.'); } }
   }
 
   const r = analisis?.resultado || {}
